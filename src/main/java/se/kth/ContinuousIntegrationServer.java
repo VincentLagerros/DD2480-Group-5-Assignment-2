@@ -9,6 +9,13 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.handler.AbstractHandler;
 
+import org.junit.runner.JUnitCore;
+import org.junit.runner.Result;
+
+import se.kth.test.java.se.kth.MainTest;
+
+
+
 /**
  * Skeleton of a ContinuousIntegrationServer which acts as webhook
  * See the Jetty documentation for API documentation of those classes.
@@ -50,6 +57,8 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             t.printStackTrace(response.getWriter());
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
+
+
     }
 
     /**
@@ -72,5 +81,15 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         if (process.waitFor() != 0) {
             throw new IOException("Bad exitcode (" + process.exitValue() + ") in git clone due to: " + new String(process.getErrorStream().readAllBytes()));
         }
+    }
+
+    /**
+     * Runs all tests in a specified junit test-class and returns the results of the tests
+     * 
+     * @param c     The test-class containing the junit tests
+     * @return      The results of the tests as a Result object
+     */
+    static Result runTests(Class<?> c){  
+       return new JUnitCore().run(c);
     }
 }
