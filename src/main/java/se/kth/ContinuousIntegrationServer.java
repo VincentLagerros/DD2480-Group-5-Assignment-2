@@ -1,5 +1,6 @@
 package se.kth;
 
+import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
@@ -11,10 +12,6 @@ import org.eclipse.jetty.server.handler.AbstractHandler;
 
 import org.junit.runner.JUnitCore;
 import org.junit.runner.Result;
-
-import se.kth.test.java.se.kth.MainTest;
-
-
 
 /**
  * Skeleton of a ContinuousIntegrationServer which acts as webhook
