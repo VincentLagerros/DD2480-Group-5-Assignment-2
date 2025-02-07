@@ -38,13 +38,13 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             // TODO not hardcode by for example using .repository in webhook push json
             String repository = "git@github.com:Juliapp123/test.git";
             String branch = "main";
-            String file = ".serverbuild/Main.java";
+            //String file = ".serverbuild/Main.java";
 
             cloneRepository(repository, branch, buildDirectory);
             printRepo(buildDirectory);
            
             // 2nd compile the code
-            compileRepository(file);
+            compileRepository();
 
             response.getWriter().println("CI job done");
             response.setStatus(HttpServletResponse.SC_OK);
@@ -86,14 +86,15 @@ public class ContinuousIntegrationServer extends AbstractHandler {
      *
      * @param file      the cloned file to compile
      */
-    static void compileRepository(String file) throws InterruptedException, IOException {
-        // spawn the process for compiling (and running) and wait
-        Process process = new ProcessBuilder("javac", file).start();
+    static void compileRepository() throws InterruptedException, IOException {
+        // spawn the process for compiling (and running?) and wait
+        Process process = new ProcessBuilder("mvn", "compile")
+            .directory(new File(buildDirectory)) // same as  "cd .serverbuild mvn compile" have to go to the correct dir
+            .start();
         if (process.waitFor() != 0) {
             throw new IOException("Error: (" + process.exitValue() + ") in complilation"
                     + new String(process.getErrorStream().readAllBytes()));
         }
-
     }
 
     static void printRepo(String buildDirectory){
