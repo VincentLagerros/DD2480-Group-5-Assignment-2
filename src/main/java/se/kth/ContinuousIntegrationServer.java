@@ -112,8 +112,9 @@ public class ContinuousIntegrationServer extends AbstractHandler {
      * @param c     The test-class containing the junit tests
      * @return      The results of the tests as a Result object
      */
-    static void runTests(String directory){  
-       startProcess("mvn clean test", "tests could not start", directory);
+    static void runTests(String directory){ 
+        String[] cmd = {"mvn", "clean", "test"};
+       startProcess(cmd, "tests could not start", directory);
     }
 
     /**
