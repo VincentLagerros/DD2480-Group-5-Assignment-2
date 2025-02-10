@@ -1,5 +1,6 @@
 package se.kth;
 
+import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
@@ -8,6 +9,9 @@ import java.io.IOException;
 import org.apache.commons.io.FileUtils;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.handler.AbstractHandler;
+
+import org.junit.runner.JUnitCore;
+import org.junit.runner.Result;
 
 /**
  * Skeleton of a ContinuousIntegrationServer which acts as webhook
@@ -37,7 +41,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
 
             // TODO not hardcode by for example using .repository in webhook push json
             String repository = "https://github.com/Juliapp123/test.git";
-            String branch = "main";
+            String branch = "Fail";
 
             cloneRepository(repository, branch, buildDirectory);
             printRepo(buildDirectory);
@@ -47,14 +51,26 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             String compileMessage = "in compilation";
             startProcess(compile, compileMessage, buildDirectory);
 
-            response.getWriter().println("CI job done");
-            response.setStatus(HttpServletResponse.SC_OK);
+            // Run the test cases 
+            boolean testsPassed = runTests(buildDirectory);
+            //response.getWriter().println("CI job done");
+            //response.setStatus(HttpServletResponse.SC_OK);
+
+            if (testsPassed) {
+                response.getWriter().println("CI job completed successfully.");
+                response.setStatus(HttpServletResponse.SC_OK);
+            } else {
+                response.getWriter().println("Tests failed!");
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
         } catch (Throwable t) {
             // in case of exception, just print it to both stderr and response
             t.printStackTrace(System.err);
             t.printStackTrace(response.getWriter());
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
+
+
     }
 
     /**
@@ -69,7 +85,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             // just delete the file directory in case it exists for a clean git clone, this
             // is easier than git pull
             FileUtils.deleteDirectory(new File(directory));
-        } catch (Throwable _) {
+        } catch (Throwable t) {
             // ignore if we can even delete it or not
         }
 
@@ -92,11 +108,27 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         ProcessBuilder builder = new ProcessBuilder(cmd);
         if (directory != null) {
             builder = builder.directory(new File(directory)); // same as "cd .serverbuild cmd"
-        }        
-         Process process =   builder.start();
+        }
+        Process process =   builder.start();
         if (process.waitFor() != 0) {
             throw new IOException("Error: (" + process.exitValue() + ") " + errorMessage
                     + new String(process.getErrorStream().readAllBytes()));
+        }
+    }
+
+    /**
+     * Runs all tests in a specified junit test-class and returns the results of the tests
+     * 
+     * @param c     The test-class containing the junit tests
+     * @return      The results of the tests as a Result object
+     */
+    static boolean runTests(String directory){ 
+        String[] cmd = {"mvn", "clean", "test"};
+        try{
+            startProcess(cmd, "tests could not start", directory);
+            return true;
+        } catch(Exception e){
+            return false;
         }
     }
 
