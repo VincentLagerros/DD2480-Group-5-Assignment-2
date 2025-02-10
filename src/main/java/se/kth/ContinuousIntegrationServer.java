@@ -40,9 +40,8 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             // 1st clone your repository
 
             // TODO not hardcode by for example using .repository in webhook push json
-            String repository = "git@github.com:Juliapp123/test.git";
+            String repository = "https://github.com/Juliapp123/test.git";
             String branch = "main";
-            //String file = ".serverbuild/Main.java";
 
             cloneRepository(repository, branch, buildDirectory);
             printRepo(buildDirectory);
@@ -82,9 +81,26 @@ public class ContinuousIntegrationServer extends AbstractHandler {
 
         // spawn the process for git cloning and wait, this is easier than importing a
         // lib
-        Process process = new ProcessBuilder("git", "clone", url, "-b", branch, directory).start();
+        String[] cloneCmd = new String[]{"git", "clone", url, "-b", branch, directory};
+        startProcess(cloneCmd, "in git clone due to: ", null);
+    }
+
+    /**
+     * Runs a system command inside a specified directory. 
+     * 
+     * @param cmd           System command
+     * @param errorMessage  Message if function crashes
+     * @param directory     Specified directory where the system command runs
+     */
+    static void startProcess(String[] cmd, String errorMessage, String directory) throws InterruptedException, IOException {
+        // spawn the process for compiling and wait
+        ProcessBuilder builder = new ProcessBuilder(cmd);
+        if (directory != null) {
+            builder = builder.directory(new File(directory)); // same as "cd .serverbuild cmd"
+        }        
+         Process process =   builder.start();
         if (process.waitFor() != 0) {
-            throw new IOException("Bad exitcode (" + process.exitValue() + ") in git clone due to: "
+            throw new IOException("Error: (" + process.exitValue() + ") " + errorMessage
                     + new String(process.getErrorStream().readAllBytes()));
         }
     }
@@ -97,24 +113,6 @@ public class ContinuousIntegrationServer extends AbstractHandler {
      */
     static Result runTests(Class<?> c){  
        return new JUnitCore().run(c);
-    }
-    
-    /**
-     * Runs a system command inside a specified directory. 
-     * 
-     * @param cmd           System command
-     * @param errorMessage  Message if function crashes
-     * @param directory     Specified directory where the system command runs
-     */
-    static void startProcess(String[] cmd, String errorMessage, String directory) throws InterruptedException, IOException {
-        // spawn the process for compiling and wait
-        Process process = new ProcessBuilder(cmd)
-            .directory(new File(directory)) // same as "cd .serverbuild cmd"
-            .start();
-        if (process.waitFor() != 0) {
-            throw new IOException("Error: (" + process.exitValue() + ") " + errorMessage
-                    + new String(process.getErrorStream().readAllBytes()));
-        }
     }
 
     /**
