@@ -51,6 +51,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             String compileMessage = "in compilation";
             startProcess(compile, compileMessage, buildDirectory);
 
+            runTests(buildDirectory);
             response.getWriter().println("CI job done");
             response.setStatus(HttpServletResponse.SC_OK);
         } catch (Throwable t) {
@@ -111,8 +112,8 @@ public class ContinuousIntegrationServer extends AbstractHandler {
      * @param c     The test-class containing the junit tests
      * @return      The results of the tests as a Result object
      */
-    static Result runTests(Class<?> c){  
-       return new JUnitCore().run(c);
+    static void runTests(String directory){  
+       startProcess("mvn clean test", "tests could not start", directory);
     }
 
     /**
