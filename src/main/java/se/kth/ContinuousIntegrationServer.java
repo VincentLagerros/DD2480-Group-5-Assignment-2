@@ -46,11 +46,14 @@ public class ContinuousIntegrationServer extends AbstractHandler {
 
             cloneRepository(repository, branch, buildDirectory);
             printRepo(buildDirectory);
+
            
             // 2nd compile the code
             String[] compile = new String[]{"mvn", "compile"};
             String compileMessage = "in compilation";
             startProcess(compile, compileMessage, buildDirectory);
+
+            readWebhook(request);
 
             response.getWriter().println("CI job done");
             response.setStatus(HttpServletResponse.SC_OK);
@@ -136,4 +139,21 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         }
 
     }  
+
+    /**
+     * Reads the payload of a HTTP message
+     * 
+     * @param req   The HTTP message to read
+     * @return  The payload of the HTTP message as a String
+     */
+    static String readWebhook(HttpServletRequest req){
+        StringBuilder builder = new StringBuilder();
+        String line;
+
+        while ((line = req.getReader().readLine()) != null) {
+            builder.append(line);
+        }
+
+        String text = builder.toString();
+    }
 }
