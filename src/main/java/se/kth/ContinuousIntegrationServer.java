@@ -48,7 +48,9 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             printRepo(buildDirectory);
            
             // 2nd compile the code
-            compileRepository();
+            String[] compile = new String[]{"mvn", "compile"};
+            String compileMessage = "in compilation";
+            startProcess(compile, compileMessage, buildDirectory);
 
             response.getWriter().println("CI job done");
             response.setStatus(HttpServletResponse.SC_OK);
@@ -98,23 +100,30 @@ public class ContinuousIntegrationServer extends AbstractHandler {
     }
     
     /**
-     * Compiles the cloned repository
-     *
-     * @param file      the cloned file to compile
+     * Runs a system command inside a specified directory. 
+     * 
+     * @param cmd           System command
+     * @param errorMessage  Message if function crashes
+     * @param directory     Specified directory where the system command runs
      */
-    static void compileRepository() throws InterruptedException, IOException {
-        // spawn the process for compiling (and running?) and wait
-        Process process = new ProcessBuilder("mvn", "compile")
-            .directory(new File(buildDirectory)) // same as  "cd .serverbuild mvn compile" have to go to the correct dir
+    static void startProcess(String[] cmd, String errorMessage, String directory) throws InterruptedException, IOException {
+        // spawn the process for compiling and wait
+        Process process = new ProcessBuilder(cmd)
+            .directory(new File(directory)) // same as "cd .serverbuild cmd"
             .start();
         if (process.waitFor() != 0) {
-            throw new IOException("Error: (" + process.exitValue() + ") in complilation"
+            throw new IOException("Error: (" + process.exitValue() + ") " + errorMessage
                     + new String(process.getErrorStream().readAllBytes()));
         }
     }
 
-    static void printRepo(String buildDirectory){
-        File folder = new File(buildDirectory);
+    /**
+     * Prints structure of the cloned repository. From StackOverflow, remove when no longer needed.  
+     * 
+     * @param directory     Specified directory
+     */
+    static void printRepo(String directory){
+        File folder = new File(directory);
         File[] listOfFiles = folder.listFiles();
         if (listOfFiles != null) {
             for (int i = 0; i < listOfFiles.length; i++) {
@@ -126,7 +135,5 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             }
         }
 
-    }
-    
-
+    }  
 }
