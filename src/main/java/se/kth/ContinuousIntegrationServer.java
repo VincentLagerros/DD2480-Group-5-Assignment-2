@@ -76,7 +76,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             // just delete the file directory in case it exists for a clean git clone, this
             // is easier than git pull
             FileUtils.deleteDirectory(new File(directory));
-        } catch (Throwable _) {
+        } catch (Throwable t) {
             // ignore if we can even delete it or not
         }
 
