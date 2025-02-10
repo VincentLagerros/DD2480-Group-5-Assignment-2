@@ -75,6 +75,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
 
         // spawn the process for git cloning and wait, this is easier than importing a
         // lib
+
         String[] cloneCmd = new String[]{"git", "clone", url, "-b", branch, directory};
         startProcess(cloneCmd, "in git clone due to: ", null);
     }
@@ -116,6 +117,5 @@ public class ContinuousIntegrationServer extends AbstractHandler {
                 }
             }
         }
-
     }  
 }
