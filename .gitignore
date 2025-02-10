@@ -29,3 +29,6 @@ replay_pid*
 
 # server build
 .serverbuild
+
+# system files
+.DS_Store

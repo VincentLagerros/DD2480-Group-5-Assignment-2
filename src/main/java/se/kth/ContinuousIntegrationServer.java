@@ -36,15 +36,16 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             // 1st clone your repository
 
             // TODO not hardcode by for example using .repository in webhook push json
-            String repository = "git@github.com:Juliapp123/test.git";
+            String repository = "https://github.com/Juliapp123/test.git";
             String branch = "main";
-            String file = ".serverbuild/Main.java";
 
             cloneRepository(repository, branch, buildDirectory);
             printRepo(buildDirectory);
            
             // 2nd compile the code
-            compileRepository(file);
+            String[] compile = new String[]{"mvn", "compile"};
+            String compileMessage = "in compilation";
+            startProcess(compile, compileMessage, buildDirectory);
 
             response.getWriter().println("CI job done");
             response.setStatus(HttpServletResponse.SC_OK);
@@ -74,30 +75,38 @@ public class ContinuousIntegrationServer extends AbstractHandler {
 
         // spawn the process for git cloning and wait, this is easier than importing a
         // lib
-        Process process = new ProcessBuilder("git", "clone", url, "-b", branch, directory).start();
+
+        String[] cloneCmd = new String[]{"git", "clone", url, "-b", branch, directory};
+        startProcess(cloneCmd, "in git clone due to: ", null);
+    }
+
+    /**
+     * Runs a system command inside a specified directory. 
+     * 
+     * @param cmd           System command
+     * @param errorMessage  Message if function crashes
+     * @param directory     Specified directory where the system command runs
+     */
+    static void startProcess(String[] cmd, String errorMessage, String directory) throws InterruptedException, IOException {
+        // spawn the process for compiling and wait
+        ProcessBuilder builder = new ProcessBuilder(cmd);
+        if (directory != null) {
+            builder = builder.directory(new File(directory)); // same as "cd .serverbuild cmd"
+        }        
+         Process process =   builder.start();
         if (process.waitFor() != 0) {
-            throw new IOException("Bad exitcode (" + process.exitValue() + ") in git clone due to: "
+            throw new IOException("Error: (" + process.exitValue() + ") " + errorMessage
                     + new String(process.getErrorStream().readAllBytes()));
         }
     }
 
     /**
-     * Compiles the cloned repository
-     *
-     * @param file      the cloned file to compile
+     * Prints structure of the cloned repository. From StackOverflow, remove when no longer needed.  
+     * 
+     * @param directory     Specified directory
      */
-    static void compileRepository(String file) throws InterruptedException, IOException {
-        // spawn the process for compiling (and running) and wait
-        Process process = new ProcessBuilder("javac", file).start();
-        if (process.waitFor() != 0) {
-            throw new IOException("Error: (" + process.exitValue() + ") in complilation"
-                    + new String(process.getErrorStream().readAllBytes()));
-        }
-
-    }
-
-    static void printRepo(String buildDirectory){
-        File folder = new File(buildDirectory);
+    static void printRepo(String directory){
+        File folder = new File(directory);
         File[] listOfFiles = folder.listFiles();
         if (listOfFiles != null) {
             for (int i = 0; i < listOfFiles.length; i++) {
@@ -108,8 +117,5 @@ public class ContinuousIntegrationServer extends AbstractHandler {
                 }
             }
         }
-
-    }
-    
-
+    }  
 }
