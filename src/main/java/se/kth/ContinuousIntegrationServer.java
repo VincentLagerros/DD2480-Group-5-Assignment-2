@@ -114,7 +114,11 @@ public class ContinuousIntegrationServer extends AbstractHandler {
      */
     static void runTests(String directory){ 
         String[] cmd = {"mvn", "clean", "test"};
-       startProcess(cmd, "tests could not start", directory);
+        try{
+            startProcess(cmd, "tests could not start", directory);
+        } catch(Exception e){
+
+        }
     }
 
     /**
