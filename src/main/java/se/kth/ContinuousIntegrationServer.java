@@ -41,7 +41,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
 
             // TODO not hardcode by for example using .repository in webhook push json
             String repository = "https://github.com/Juliapp123/test.git";
-            String branch = "main";
+            String branch = "Fail";
 
             cloneRepository(repository, branch, buildDirectory);
             printRepo(buildDirectory);
@@ -51,9 +51,18 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             String compileMessage = "in compilation";
             startProcess(compile, compileMessage, buildDirectory);
 
-            runTests(buildDirectory);
-            response.getWriter().println("CI job done");
-            response.setStatus(HttpServletResponse.SC_OK);
+            // Run the test cases 
+            boolean testsPassed = runTests(buildDirectory);
+            //response.getWriter().println("CI job done");
+            //response.setStatus(HttpServletResponse.SC_OK);
+
+            if (testsPassed) {
+                response.getWriter().println("CI job completed successfully.");
+                response.setStatus(HttpServletResponse.SC_OK);
+            } else {
+                response.getWriter().println("Tests failed!");
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
         } catch (Throwable t) {
             // in case of exception, just print it to both stderr and response
             t.printStackTrace(System.err);
@@ -98,8 +107,8 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         ProcessBuilder builder = new ProcessBuilder(cmd);
         if (directory != null) {
             builder = builder.directory(new File(directory)); // same as "cd .serverbuild cmd"
-        }        
-         Process process =   builder.start();
+        }
+        Process process =   builder.start();
         if (process.waitFor() != 0) {
             throw new IOException("Error: (" + process.exitValue() + ") " + errorMessage
                     + new String(process.getErrorStream().readAllBytes()));
@@ -112,12 +121,13 @@ public class ContinuousIntegrationServer extends AbstractHandler {
      * @param c     The test-class containing the junit tests
      * @return      The results of the tests as a Result object
      */
-    static void runTests(String directory){ 
+    static boolean runTests(String directory){ 
         String[] cmd = {"mvn", "clean", "test"};
         try{
             startProcess(cmd, "tests could not start", directory);
+            return true;
         } catch(Exception e){
-
+            return false;
         }
     }
 
