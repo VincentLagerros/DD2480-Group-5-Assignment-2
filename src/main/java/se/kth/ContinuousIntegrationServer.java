@@ -44,9 +44,11 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         // target == index.html responds with html
         System.out.println(target);
 
-        // TODO not hardcode by for example using .repository in webhook push json
-        String repository = "https://github.com/Juliapp123/test.git";
-        String branch = "Fail";
+        JSONObject payload = readWebhook(request);
+        String repository = payload.getJSONObject("repository").getString("clone_url"); //get cloneable repo URL
+
+        String repoRef[] = payload.getString("ref").split("/"); 
+        String branch = repoRef[repoRef.length-1]; //get name of branch
         Writer log = new StringWriter();
 
         BuildStatus status = runContinuousIntegration(log, repository, branch);
@@ -218,6 +220,29 @@ public class ContinuousIntegrationServer extends AbstractHandler {
                     errorMessage);
         }
         return stdout.toString();
+    }
+
+    /**
+     * Reads the payload of a HTTP message
+     * 
+     * @param req   The HTTP message to read
+     * @return  The payload of the HTTP message as a JSonObject if
+     *          payload can be read, otherwise null
+     */
+    static JSONObject readWebhook(HttpServletRequest req){
+        StringBuilder builder = new StringBuilder();
+        String line;
+
+        try{
+            while ((line = req.getReader().readLine()) != null) {
+                builder.append(line);
+            }
+        }catch(IOException e){
+            return null;
+        }
+
+        String text = builder.toString();
+        return new JSONObject(text);
     }
 }
 
