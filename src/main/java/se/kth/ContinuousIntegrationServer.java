@@ -1,17 +1,13 @@
 package se.kth;
 
-import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.handler.AbstractHandler;
-
-import org.junit.runner.JUnitCore;
-import org.junit.runner.Result;
+import org.json.JSONObject;
 
 /**
  * Skeleton of a ContinuousIntegrationServer which acts as webhook
@@ -19,11 +15,23 @@ import org.junit.runner.Result;
  */
 public class ContinuousIntegrationServer extends AbstractHandler {
     static String buildDirectory = ".serverbuild";
+    static String outputDirectory = ".serveroutput";
+
+    enum BuildStatus {
+        SUCCESS,
+        FAILED_SETUP,
+        FAILED_TO_COMPILE,
+        FAILED_TO_TEST,
+    }
+
+    // windows is a bit weird sometimes
+    // https://stackoverflow.com/questions/58713148/how-to-fix-createprocess-error-2-the-system-cannot-find-the-file-specified-ev
+    static String mvn = System.getProperty("os.name").toLowerCase().contains("windows") ? "mvn.cmd" : "mvn";
 
     public void handle(String target,
-            Request baseRequest,
-            HttpServletRequest request,
-            HttpServletResponse response)
+                       Request baseRequest,
+                       HttpServletRequest request,
+                       HttpServletResponse response)
             throws IOException {
         response.setContentType("text/html;charset=utf-8");
         baseRequest.setHandled(true);
@@ -36,35 +44,117 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         // target == index.html responds with html
         System.out.println(target);
 
-        try {
-            // 1st clone your repository
+        // TODO not hardcode by for example using .repository in webhook push json
+        String repository = "https://github.com/Juliapp123/test.git";
+        String branch = "Fail";
+        Writer log = new StringWriter();
 
-            // TODO not hardcode by for example using .repository in webhook push json
-            String repository = "git@github.com:Juliapp123/test.git";
-            String branch = "main";
-            //String file = ".serverbuild/Main.java";
-
-            cloneRepository(repository, branch, buildDirectory);
-            printRepo(buildDirectory);
-
-           
-            // 2nd compile the code
-            String[] compile = new String[]{"mvn", "compile"};
-            String compileMessage = "in compilation";
-            startProcess(compile, compileMessage, buildDirectory);
-
-            readWebhook(request);
-
-            response.getWriter().println("CI job done");
-            response.setStatus(HttpServletResponse.SC_OK);
-        } catch (Throwable t) {
-            // in case of exception, just print it to both stderr and response
-            t.printStackTrace(System.err);
-            t.printStackTrace(response.getWriter());
-            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        BuildStatus status = runContinuousIntegration(log, repository, branch);
+        response.getWriter().write(log.toString().replace("\n", "<br>")); // nice formatting
+        switch (status) {
+            case SUCCESS, FAILED_TO_COMPILE, FAILED_TO_TEST -> response.setStatus(HttpServletResponse.SC_OK);
+            case FAILED_SETUP -> response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
+    }
 
+    /**
+     * @param log The logger
+     * @return The commit hash of the head of the project
+     */
+    static String getCommitId(Writer log) throws ProcessException, IOException, InterruptedException {
+        String commitId = startProcess("in git rev-parse", buildDirectory, "git", "rev-parse", "HEAD").trim();
+        log.append("Commit = ").append(commitId);
+        return commitId;
+    }
 
+    /**
+     * @param log The logger
+     * @return If the project can be compiled
+     */
+    static boolean compileProject(Writer log) throws IOException, InterruptedException {
+        log.append("\n==== Starting mvn compile ====\n");
+        try {
+            log.append(startProcess("in compilation", buildDirectory, mvn, "compile"));
+            return true;
+        } catch (ProcessException e) {
+            return false;
+        }
+    }
+
+    /**
+     * @param log The logger
+     * @return If the test was successful
+     */
+    static boolean testProject(Writer log) throws IOException, InterruptedException {
+        log.append("\n==== Running tests ====\n");
+        try {
+            log.append(startProcess("tests could not start", buildDirectory, mvn, "test"));
+            return true;
+        } catch (ProcessException e) {
+            log.append(e.stdout);
+            log.append("\n==== Test failed ====\n");
+            log.append(e.stderr);
+            return false;
+        }
+    }
+
+    /**
+     * @param log        Logger responsible
+     * @param repository https repository GitHub url
+     * @param branch     the specified repository branch url
+     * @return status, 0 = all tests passed, 1 = unknown worker error, 2 = failed to compile, 3 = failed tests
+     */
+    static BuildStatus runContinuousIntegration(
+            Writer log,
+            String repository,
+            String branch
+    ) {
+        String repositoryFilename = repository.replace("https://github.com/", "").replace(".git", "") + "/" + branch;
+        File logFile = null;
+        File statusFile = null;
+        String commitId = "";
+
+        BuildStatus status = BuildStatus.SUCCESS;
+        File outputFile = new File(outputDirectory, repositoryFilename);
+        Boolean _ = outputFile.mkdirs();
+
+        try {
+            cloneRepository(log, repository, branch, buildDirectory);
+            commitId = getCommitId(log);
+
+            logFile = new File(outputFile, commitId + ".log");
+            statusFile = new File(outputFile, commitId + ".json");
+
+            if (!compileProject(log)) {
+                status = BuildStatus.FAILED_TO_COMPILE;
+            } else if (!testProject(log)) {
+                status = BuildStatus.FAILED_TO_TEST;
+            }
+        } catch (Throwable t) {
+            status = BuildStatus.FAILED_SETUP;
+            t.printStackTrace(new PrintWriter(log));
+        } finally {
+            // write the logfile if we have a commit id
+            try {
+                if (logFile != null) {
+                    PrintWriter writer = new PrintWriter(logFile.getPath());
+                    writer.write(log.toString());
+                    writer.close();
+                }
+                // if we have a status file we can write to, then write what information we have
+                if (statusFile != null) {
+                    PrintWriter writer = new PrintWriter(statusFile.getPath());
+                    JSONObject jo = new JSONObject();
+                    jo.put("commit", commitId);
+                    jo.put("time", System.currentTimeMillis());
+                    jo.put("status", status);
+                    writer.write(jo.toString(4));
+                    writer.close();
+                }
+            } catch (Exception _) {
+            }
+        }
+        return status;
     }
 
     /**
@@ -74,7 +164,12 @@ public class ContinuousIntegrationServer extends AbstractHandler {
      * @param branch    The branch of the git repo, e.g. Main
      * @param directory The output folder directory, e.g. build
      */
-    static void cloneRepository(String url, String branch, String directory) throws InterruptedException, IOException {
+    static void cloneRepository(
+            Writer log,
+            String url,
+            String branch,
+            String directory
+    ) throws InterruptedException, IOException, ProcessException {
         try {
             // just delete the file directory in case it exists for a clean git clone, this
             // is easier than git pull
@@ -85,75 +180,44 @@ public class ContinuousIntegrationServer extends AbstractHandler {
 
         // spawn the process for git cloning and wait, this is easier than importing a
         // lib
-        Process process = new ProcessBuilder("git", "clone", url, "-b", branch, directory).start();
-        if (process.waitFor() != 0) {
-            throw new IOException("Bad exitcode (" + process.exitValue() + ") in git clone due to: "
-                    + new String(process.getErrorStream().readAllBytes()));
-        }
+        log.append("\n==== Starting cloning repository ====\n");
+        log.write(startProcess("in git clone due to: ", null, "git", "clone", url, "-b", branch, directory));
     }
 
     /**
-     * Runs all tests in a specified junit test-class and returns the results of the tests
-     * 
-     * @param c     The test-class containing the junit tests
-     * @return      The results of the tests as a Result object
+     * Runs a system command inside a specified directory.
+     *
+     * @param cmd          System command
+     * @param errorMessage Message if function crashes
+     * @param directory    Specified directory where the system command runs
+     * @return returns the stdout log
      */
-    static Result runTests(Class<?> c){  
-       return new JUnitCore().run(c);
-    }
-    
-    /**
-     * Runs a system command inside a specified directory. 
-     * 
-     * @param cmd           System command
-     * @param errorMessage  Message if function crashes
-     * @param directory     Specified directory where the system command runs
-     */
-    static void startProcess(String[] cmd, String errorMessage, String directory) throws InterruptedException, IOException {
+    static String startProcess(String errorMessage, String directory, String... cmd) throws InterruptedException, IOException, ProcessException {
         // spawn the process for compiling and wait
-        Process process = new ProcessBuilder(cmd)
-            .directory(new File(directory)) // same as "cd .serverbuild cmd"
-            .start();
-        if (process.waitFor() != 0) {
-            throw new IOException("Error: (" + process.exitValue() + ") " + errorMessage
-                    + new String(process.getErrorStream().readAllBytes()));
-        }
-    }
-
-    /**
-     * Prints structure of the cloned repository. From StackOverflow, remove when no longer needed.  
-     * 
-     * @param directory     Specified directory
-     */
-    static void printRepo(String directory){
-        File folder = new File(directory);
-        File[] listOfFiles = folder.listFiles();
-        if (listOfFiles != null) {
-            for (int i = 0; i < listOfFiles.length; i++) {
-                if (listOfFiles[i].isFile()) {
-                    System.out.println("File " + listOfFiles[i].getName());
-                } else if (listOfFiles[i].isDirectory()) {
-                    System.out.println("Directory " + listOfFiles[i].getName());
-                }
-            }
+        ProcessBuilder builder = new ProcessBuilder(cmd);
+        if (directory != null) {
+            builder.directory(new File(directory));
         }
 
-    }  
-
-    /**
-     * Reads the payload of a HTTP message
-     * 
-     * @param req   The HTTP message to read
-     * @return  The payload of the HTTP message as a String
-     */
-    static String readWebhook(HttpServletRequest req){
-        StringBuilder builder = new StringBuilder();
+        // this is needed because waitFor may get stuck if the stdout is not processed
+        Process process = builder.start();
+        final BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        StringBuilder stdout = new StringBuilder();
         String line;
-
-        while ((line = req.getReader().readLine()) != null) {
-            builder.append(line);
+        while ((line = reader.readLine()) != null) {
+            stdout.append(line);
+            stdout.append('\n');
         }
+        reader.close();
 
-        String text = builder.toString();
+        if (process.waitFor() != 0) {
+            throw new ProcessException(
+                    stdout.toString(),
+                    new String(process.getErrorStream().readAllBytes()),
+                    process.exitValue(),
+                    errorMessage);
+        }
+        return stdout.toString();
     }
 }
+
