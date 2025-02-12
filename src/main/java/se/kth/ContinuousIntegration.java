@@ -69,14 +69,17 @@ public class ContinuousIntegration {
             Writer log,
             String repository,
             String branch,
+            String commitId,
+            String ownerName,
+            String repoName,
             Filesystem filesystem
     ) {
         Filesystem.BuildStatus status = Filesystem.BuildStatus.SUCCESS;
-        String commitId = "";
+        //String commitId = "";
 
         try {
             cloneRepository(log, repository, branch, buildDirectory);
-            commitId = getCommitId(log);
+            //commitId = getCommitId(log);
 
             if (!compileProject(log)) {
                 status = Filesystem.BuildStatus.FAILED_TO_COMPILE;
@@ -96,8 +99,10 @@ public class ContinuousIntegration {
                 e.printStackTrace();
             }
         }
+        //answerGit(repository, branch, commitId, ownerName, repoName, status, log);
         return status;
     }
+
 
     /**
      * Clones a repository into the cwd/directory
