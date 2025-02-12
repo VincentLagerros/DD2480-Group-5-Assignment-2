@@ -3,246 +3,229 @@ package se.kth;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
+import java.net.HttpURLConnection;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Date;
 
-import org.apache.commons.io.FileUtils;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.json.JSONObject;
+
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Skeleton of a ContinuousIntegrationServer which acts as webhook
  * See the Jetty documentation for API documentation of those classes.
  */
 public class ContinuousIntegrationServer extends AbstractHandler {
-    static String buildDirectory = ".serverbuild";
-    static String outputDirectory = ".serveroutput";
-
-    enum BuildStatus {
-        SUCCESS,
-        FAILED_SETUP,
-        FAILED_TO_COMPILE,
-        FAILED_TO_TEST,
-    }
-
-    // windows is a bit weird sometimes
-    // https://stackoverflow.com/questions/58713148/how-to-fix-createprocess-error-2-the-system-cannot-find-the-file-specified-ev
-    static String mvn = System.getProperty("os.name").toLowerCase().contains("windows") ? "mvn.cmd" : "mvn";
+    ContinuousIntegration ci = new ContinuousIntegration(".serverbuild");
+    Filesystem fileSystem = new Filesystem(".serveroutput");
 
     public void handle(String target,
                        Request baseRequest,
                        HttpServletRequest request,
-                       HttpServletResponse response)
-            throws IOException {
+                       HttpServletResponse response) {
         response.setContentType("text/html;charset=utf-8");
         baseRequest.setHandled(true);
+
         // For full documentation what GitHub sends, read
         // https://docs.github.com/en/webhooks/webhook-events-and-payloads
         // We are most interested in
         // https://docs.github.com/en/webhooks/webhook-events-and-payloads#push
 
-        // What we can also do it use target for the webserver to host content. Eg
-        // target == index.html responds with html
-        System.out.println(target);
+        try {
+            String userAgent = request.getHeader("user-agent");
+            if (userAgent.contains("GitHub-Hookshot")) {
+                buildCi(request, response);
+            } else {
+                showWebinterface(target, response);
+            }
+        } catch (Throwable t) {
+            // we do not want to crash it
+            try {
+                t.printStackTrace(response.getWriter());
+            } catch (IOException _) {
+            }
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
+    }
 
+    void buildCi(HttpServletRequest request, HttpServletResponse response) throws IOException {
         JSONObject payload = readWebhook(request);
-        String repository = payload.getJSONObject("repository").getString("clone_url"); //get cloneable repo URL
+        JSONObject repositoryPayload = payload.getJSONObject("repository");
+        String repository = repositoryPayload.getString("clone_url"); //get cloneable repo URL
 
-        String repoRef[] = payload.getString("ref").split("/"); 
-        String branch = repoRef[repoRef.length-1]; //get name of branch
+        String[] repoRef = payload.getString("ref").split("/");
+        String branchName = repoRef[repoRef.length - 1]; //get name of branch
+        String commitId = payload.getJSONObject("head_commit").getString("id"); // get sha ID
+        String ownerName = repositoryPayload.getJSONObject("owner").getString("name");
+        String repoName = repositoryPayload.getString("name");
         Writer log = new StringWriter();
 
-        BuildStatus status = runContinuousIntegration(log, repository, branch);
-        response.getWriter().write(log.toString().replace("\n", "<br>")); // nice formatting
+        // set the status of the repo to pending
+        sendResponse(commitId, ownerName, repoName, Filesystem.BuildStatus.PENDING);
+
+        Filesystem.BuildStatus status = ci.runContinuousIntegration(log, repository, ownerName, repoName, branchName, commitId, fileSystem);
+
+        // send response to the webhook
+        response.getWriter().write(log.toString());
         switch (status) {
             case SUCCESS, FAILED_TO_COMPILE, FAILED_TO_TEST -> response.setStatus(HttpServletResponse.SC_OK);
             case FAILED_SETUP -> response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            case PENDING -> throw new RuntimeException("Unreachable");
         }
+
+        // set the status of the repo to the build status
+        sendResponse(commitId, ownerName, repoName, status);
     }
 
-    /**
-     * @param log The logger
-     * @return The commit hash of the head of the project
-     */
-    static String getCommitId(Writer log) throws ProcessException, IOException, InterruptedException {
-        String commitId = startProcess("in git rev-parse", buildDirectory, "git", "rev-parse", "HEAD").trim();
-        log.append("Commit = ").append(commitId);
-        return commitId;
-    }
+    void showWebinterface(String target, HttpServletResponse response) throws IOException {
+        Object directory = fileSystem.getDirectory(target);
+        if (directory instanceof Filesystem.LogData) {
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.getWriter().write(((Filesystem.LogData) directory).toHtml());
+        } else if (directory instanceof Object[]) {
+            response.setStatus(HttpServletResponse.SC_OK);
+            ArrayList<File> dirs = new ArrayList<>();
+            ArrayList<Filesystem.BuildData> builds = new ArrayList<>();
 
-    /**
-     * @param log The logger
-     * @return If the project can be compiled
-     */
-    static boolean compileProject(Writer log) throws IOException, InterruptedException {
-        log.append("\n==== Starting mvn compile ====\n");
-        try {
-            log.append(startProcess("in compilation", buildDirectory, mvn, "compile"));
-            return true;
-        } catch (ProcessException e) {
-            return false;
-        }
-    }
-
-    /**
-     * @param log The logger
-     * @return If the test was successful
-     */
-    static boolean testProject(Writer log) throws IOException, InterruptedException {
-        log.append("\n==== Running tests ====\n");
-        try {
-            log.append(startProcess("tests could not start", buildDirectory, mvn, "test"));
-            return true;
-        } catch (ProcessException e) {
-            log.append(e.stdout);
-            log.append("\n==== Test failed ====\n");
-            log.append(e.stderr);
-            return false;
-        }
-    }
-
-    /**
-     * @param log        Logger responsible
-     * @param repository https repository GitHub url
-     * @param branch     the specified repository branch url
-     * @return status, 0 = all tests passed, 1 = unknown worker error, 2 = failed to compile, 3 = failed tests
-     */
-    static BuildStatus runContinuousIntegration(
-            Writer log,
-            String repository,
-            String branch
-    ) {
-        String repositoryFilename = repository.replace("https://github.com/", "").replace(".git", "") + "/" + branch;
-        File logFile = null;
-        File statusFile = null;
-        String commitId = "";
-
-        BuildStatus status = BuildStatus.SUCCESS;
-        File outputFile = new File(outputDirectory, repositoryFilename);
-        Boolean _ = outputFile.mkdirs();
-
-        try {
-            cloneRepository(log, repository, branch, buildDirectory);
-            commitId = getCommitId(log);
-
-            logFile = new File(outputFile, commitId + ".log");
-            statusFile = new File(outputFile, commitId + ".json");
-
-            if (!compileProject(log)) {
-                status = BuildStatus.FAILED_TO_COMPILE;
-            } else if (!testProject(log)) {
-                status = BuildStatus.FAILED_TO_TEST;
-            }
-        } catch (Throwable t) {
-            status = BuildStatus.FAILED_SETUP;
-            t.printStackTrace(new PrintWriter(log));
-        } finally {
-            // write the logfile if we have a commit id
-            try {
-                if (logFile != null) {
-                    PrintWriter writer = new PrintWriter(logFile.getPath());
-                    writer.write(log.toString());
-                    writer.close();
+            for (Object obj : (Object[]) directory) {
+                if (obj instanceof File) {
+                    dirs.add((File) obj);
+                } else if (obj instanceof Filesystem.BuildData) {
+                    builds.add((Filesystem.BuildData) obj);
                 }
-                // if we have a status file we can write to, then write what information we have
-                if (statusFile != null) {
-                    PrintWriter writer = new PrintWriter(statusFile.getPath());
-                    JSONObject jo = new JSONObject();
-                    jo.put("commit", commitId);
-                    jo.put("time", System.currentTimeMillis());
-                    jo.put("status", status);
-                    writer.write(jo.toString(4));
-                    writer.close();
-                }
-            } catch (Exception _) {
             }
+            builds.sort(Comparator.comparingLong(t -> t.time));
+
+            StringBuilder buildText = new StringBuilder();
+
+            if (!builds.isEmpty()) {
+                buildText.append(Webb.buildHeader);
+            }
+            for (Filesystem.BuildData build : builds) {
+                String statusText = switch (build.status) {
+                    case SUCCESS -> "Build successful";
+                    case PENDING -> "Build in progress";
+                    case FAILED_SETUP -> "Unable to complete job";
+                    case FAILED_TO_COMPILE -> "Failed to compile";
+                    case FAILED_TO_TEST -> "Failed tests";
+                };
+                SimpleDateFormat sdf = new SimpleDateFormat("MMM dd,yyyy HH:mm");
+                Date resultdate = new Date(build.time);
+                buildText.append(Webb.buildRow.formatted(build.commit, statusText, sdf.format(resultdate), fileSystem.sanitizeFilepath(new File(build.file.getParentFile(), build.commit + ".log")), build.commit));
+            }
+
+            StringBuilder buildDirs = new StringBuilder();
+            if (!dirs.isEmpty()) {
+                buildDirs.append(Webb.dirHeader);
+            }
+            for (File dir : dirs) {
+                buildDirs.append(Webb.dirRow.formatted(fileSystem.sanitizeFilepath(dir), dir.getName()));
+            }
+
+            if (dirs.isEmpty() && builds.isEmpty()) {
+                buildText.append(Webb.nothingFound);
+            }
+
+            String output = Webb.template.formatted(buildText.toString(), buildDirs.toString());
+            response.getWriter().write(output);
+            response.setStatus(HttpServletResponse.SC_OK);
+        } else {
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            response.getWriter().write("Internal server error");
         }
-        return status;
     }
 
     /**
-     * Clones a repository into the cwd/directory
+     * Reads the payload of an HTTP message
      *
-     * @param url       The https url of the git repo
-     * @param branch    The branch of the git repo, e.g. Main
-     * @param directory The output folder directory, e.g. build
+     * @param req The HTTP message to read
+     * @return The payload of the HTTP message as a JSonObject if
+     * payload can be read, otherwise null
      */
-    static void cloneRepository(
-            Writer log,
-            String url,
-            String branch,
-            String directory
-    ) throws InterruptedException, IOException, ProcessException {
-        try {
-            // just delete the file directory in case it exists for a clean git clone, this
-            // is easier than git pull
-            FileUtils.deleteDirectory(new File(directory));
-        } catch (Throwable t) {
-            // ignore if we can even delete it or not
-        }
-
-        // spawn the process for git cloning and wait, this is easier than importing a
-        // lib
-        log.append("\n==== Starting cloning repository ====\n");
-        log.write(startProcess("in git clone due to: ", null, "git", "clone", url, "-b", branch, directory));
-    }
-
-    /**
-     * Runs a system command inside a specified directory.
-     *
-     * @param cmd          System command
-     * @param errorMessage Message if function crashes
-     * @param directory    Specified directory where the system command runs
-     * @return returns the stdout log
-     */
-    static String startProcess(String errorMessage, String directory, String... cmd) throws InterruptedException, IOException, ProcessException {
-        // spawn the process for compiling and wait
-        ProcessBuilder builder = new ProcessBuilder(cmd);
-        if (directory != null) {
-            builder.directory(new File(directory));
-        }
-
-        // this is needed because waitFor may get stuck if the stdout is not processed
-        Process process = builder.start();
-        final BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-        StringBuilder stdout = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) {
-            stdout.append(line);
-            stdout.append('\n');
-        }
-        reader.close();
-
-        if (process.waitFor() != 0) {
-            throw new ProcessException(
-                    stdout.toString(),
-                    new String(process.getErrorStream().readAllBytes()),
-                    process.exitValue(),
-                    errorMessage);
-        }
-        return stdout.toString();
-    }
-
-    /**
-     * Reads the payload of a HTTP message
-     * 
-     * @param req   The HTTP message to read
-     * @return  The payload of the HTTP message as a JSONObject if
-     *          payload can be read, otherwise null
-     */
-    static JSONObject readWebhook(HttpServletRequest req){
+    static JSONObject readWebhook(HttpServletRequest req) throws IOException {
         StringBuilder builder = new StringBuilder();
         String line;
 
-        try{
-            while ((line = req.getReader().readLine()) != null) {
-                builder.append(line);
-            }
-        }catch(IOException e){
-            return null;
+        while ((line = req.getReader().readLine()) != null) {
+            builder.append(line);
         }
 
         String text = builder.toString();
         return new JSONObject(text);
+    }
+
+    static void sendResponse(
+            String commitId,
+            String ownerName,
+            String repoName,
+            Filesystem.BuildStatus status
+    ) {
+        // Convert CI status to GitHub API state
+        String state;
+        String description = switch (status) {
+            case SUCCESS -> {
+                state = "success";
+                yield "Build succeeded!";
+            }
+            case FAILED_TO_COMPILE -> {
+                state = "failure";
+                yield "Compilation failed!";
+            }
+            case FAILED_TO_TEST -> {
+                state = "failure";
+                yield "Tests failed!";
+            }
+            case PENDING -> {
+                state = "pending";
+                yield "Building in progress!";
+            }
+            default -> {
+                state = "error";
+                yield "CI setup failed!";
+            }
+        };
+        // https://docs.github.com/en/rest/commits/statuses?apiVersion=2022-11-28#create-a-commit-status
+        String apiUrl = String.format("https://api.github.com/repos/%s/%s/statuses/%s", ownerName, repoName, commitId);
+
+        // Construct JSON response
+        JSONObject jsonResponse = new JSONObject();
+
+        jsonResponse.put("state", state);
+        jsonResponse.put("description", description);
+
+        try {
+            // Send commit status update to GitHub
+            HttpURLConnection connection = (HttpURLConnection) new URL(apiUrl).openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true); // Enable sending request body
+
+            String githubToken = System.getenv("GITHUB_TOKEN");
+            if (githubToken == null || githubToken.isBlank()) {
+                throw new IOException("No environment variable GITHUB_TOKEN found");
+            }
+            connection.setRequestProperty("Authorization", "Bearer " + githubToken);
+
+            // Write JSON data to the request body
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = jsonResponse.toString().getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+
+            // Check GitHub API response
+            int responseCode = connection.getResponseCode();
+            if (responseCode != 201) { // 201 = Created (Success)
+                throw new IOException("Failed to update status on GitHub, Response Code: " + responseCode);
+            }
+        } catch (IOException e) {
+            e.printStackTrace(); // Log errors
+        }
     }
 }
 
