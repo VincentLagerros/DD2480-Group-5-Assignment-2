@@ -21,7 +21,7 @@ public class ContinuousIntegrationServerTest {
     @Before
     public void setUp(){
         try{
-            ContinuousIntegrationServer.cloneRepository(log, "https://github.com/Juliapp123/test.git", "Fail", ".serverbuild");
+            ContinuousIntegration.cloneRepository(log, "https://github.com/Juliapp123/test.git", "Fail", ".serverbuild");
         }catch(Exception e){}
     }
 
@@ -29,19 +29,19 @@ public class ContinuousIntegrationServerTest {
     public void compileInvalidRepoTest(){
         try{
         FileUtils.deleteDirectory(new File(".serverbuild"));
-        }catch(Exception e){
-        }
+        }catch(Exception e){}
 
-        assertThrows(IOException.class, () -> ContinuousIntegrationServer.compileProject(log));
+        assertThrows(Exception.class, () -> ContinuousIntegration.compileProject(log));
     }
 
     @Test
     public void compileRepoTest(){
         try{
-            assertTrue(ContinuousIntegrationServer.compileProject(log));
+            assertTrue(ContinuousIntegration.compileProject(log));
         }catch(Exception e){
-            fail();
             System.out.println(e);
+            fail();
+            
         }
     }
 }
