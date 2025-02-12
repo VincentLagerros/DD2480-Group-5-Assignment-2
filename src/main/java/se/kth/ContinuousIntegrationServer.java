@@ -226,7 +226,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
      * Reads the payload of a HTTP message
      * 
      * @param req   The HTTP message to read
-     * @return  The payload of the HTTP message as a JSonObject if
+     * @return  The payload of the HTTP message as a JSONObject if
      *          payload can be read, otherwise null
      */
     static JSONObject readWebhook(HttpServletRequest req){
