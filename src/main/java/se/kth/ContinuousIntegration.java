@@ -99,7 +99,6 @@ public class ContinuousIntegration {
                 e.printStackTrace();
             }
         }
-        //answerGit(repository, branch, commitId, ownerName, repoName, status, log);
         return status;
     }
 

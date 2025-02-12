@@ -36,7 +36,10 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         // https://docs.github.com/en/webhooks/webhook-events-and-payloads#push
 
         // for manual requests you can type http://localhost:8080/?r=https://github.com/Juliapp123/test.git&b=Fail
-        if (request.getQueryString() != null) {
+
+        String userAgent = request.getHeader("user-agent");
+
+        if (userAgent.contains("GitHub-Hookshot")) {
             buildCi(request, response);
         } else {
             showWebinterface(target, response);
@@ -175,7 +178,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
                 break;
         }
 
-        String apiUrl = String.format("\"url\": https://api.github.com/repos/%s/%s/statuses/%s", ownerName, repoName, commitId);
+        String apiUrl = String.format("https://api.github.com/repos/%s/%s/statuses/%s", ownerName, repoName, commitId);
 
         // Construct JSON response
         JSONObject jsonResponse = new JSONObject();
@@ -184,12 +187,15 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         jsonResponse.put("description", description);
 
         try {
-        // Send commit status update to GitHub
-        HttpURLConnection connection = (HttpURLConnection) new URL(apiUrl).openConnection();
-        connection.setRequestMethod("POST");
-        connection.setRequestProperty("Content-Type", "application/json");
-        connection.setDoOutput(true); // Enable sending request body
+            // Send commit status update to GitHub
+            HttpURLConnection connection = (HttpURLConnection) new URL(apiUrl).openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true); // Enable sending request body
 
+            String githubToken = System.getenv("GITHUB_TOKEN");
+            connection.setRequestProperty("Authorization", "token " + githubToken);
+            
             // Write JSON data to the request body
             try (OutputStream os = connection.getOutputStream()) {
                 byte[] input = jsonResponse.toString().getBytes(StandardCharsets.UTF_8);
