@@ -21,6 +21,7 @@ public class Filesystem {
 
     enum BuildStatus {
         SUCCESS,
+        PENDING,
         FAILED_SETUP,
         FAILED_TO_COMPILE,
         FAILED_TO_TEST,
@@ -67,16 +68,12 @@ public class Filesystem {
         String commit;
         Long time;
         File file;
-        String repository;
-        String branch;
 
-        BuildData(File file, BuildStatus status, String commit, String repository, String branch) {
+        BuildData(File file, BuildStatus status, String commit) {
             this.file = file;
             this.time = System.currentTimeMillis();
             this.commit = commit;
             this.status = status;
-            this.repository = repository;
-            this.branch = branch;
         }
 
         BuildData(File file) throws IOException {
@@ -84,8 +81,6 @@ public class Filesystem {
             this.file = file;
             this.time = json.getLong("time");
             this.commit = json.getString("commit");
-            this.branch = json.getString("branch");
-            this.repository = json.getString("repository");
             this.status = json.getEnum(BuildStatus.class, "status");
         }
 
@@ -94,8 +89,6 @@ public class Filesystem {
             jo.put("commit", commit);
             jo.put("time", System.currentTimeMillis());
             jo.put("status", status);
-            jo.put("repository", repository);
-            jo.put("branch", branch);
             return jo;
         }
 
@@ -110,22 +103,21 @@ public class Filesystem {
      * Save the current metadata to storage
      */
     void saveToFile(
-            String repository,
-            String branch,
-            String commit,
+            String ownerName,
+            String repoName,
+            String branchName,
+            String commitId,
             String log,
             BuildStatus status
     ) throws IOException {
-        // no commit id
-        if (commit.isEmpty()) {
-            return;
-        }
-        String repositoryFilename = repository.replace("https://github.com/", "").replace(".git", "") + "/" + branch;
-        File outputFile = new File(outputDirectory, repositoryFilename);
-        Boolean _ = outputFile.mkdirs();
+        File ownerFile = new File(outputDirectory, ownerName);
+        File repoFile = new File(ownerFile, repoName);
+        File branchFile = new File(repoFile, branchName);
 
-        BuildData dataFile = new BuildData(new File(outputFile, commit + ".json"), status, commit, repository, branch);
-        LogData logFile = new LogData(new File(outputFile, commit + ".log"), log);
+        Boolean _ = branchFile.mkdirs();
+
+        BuildData dataFile = new BuildData(new File(branchFile, commitId + ".json"), status, commitId);
+        LogData logFile = new LogData(new File(branchFile, commitId + ".log"), log);
 
         dataFile.writeToFile();
         logFile.writeToFile();

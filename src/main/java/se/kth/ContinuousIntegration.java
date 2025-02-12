@@ -62,23 +62,23 @@ public class ContinuousIntegration {
     /**
      * @param log        Logger responsible
      * @param repository https repository GitHub url
-     * @param branch     the specified repository branch url
+     * @param branchName     the specified repository branch url
      * @return status
      */
     Filesystem.BuildStatus runContinuousIntegration(
             Writer log,
             String repository,
-            String branch,
-            String commitId,
             String ownerName,
             String repoName,
+            String branchName,
+            String commitId,
             Filesystem filesystem
     ) {
         Filesystem.BuildStatus status = Filesystem.BuildStatus.SUCCESS;
         //String commitId = "";
 
         try {
-            cloneRepository(log, repository, branch, buildDirectory);
+            cloneRepository(log, repository, branchName, buildDirectory);
             //commitId = getCommitId(log);
 
             if (!compileProject(log)) {
@@ -92,7 +92,7 @@ public class ContinuousIntegration {
         } finally {
             // write the logfile if we have a commit id
             try {
-                filesystem.saveToFile(repository, branch, commitId, log.toString(), status);
+                filesystem.saveToFile(ownerName, repoName, branchName, commitId, log.toString(), status);
             } catch (IOException e) {
                 e.printStackTrace(new PrintWriter(log));
                 // no error should happen

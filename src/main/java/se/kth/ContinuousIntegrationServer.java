@@ -6,6 +6,8 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
 
 import org.eclipse.jetty.server.Request;
@@ -26,47 +28,59 @@ public class ContinuousIntegrationServer extends AbstractHandler {
     public void handle(String target,
                        Request baseRequest,
                        HttpServletRequest request,
-                       HttpServletResponse response)
-            throws IOException {
+                       HttpServletResponse response) {
         response.setContentType("text/html;charset=utf-8");
         baseRequest.setHandled(true);
+
         // For full documentation what GitHub sends, read
         // https://docs.github.com/en/webhooks/webhook-events-and-payloads
         // We are most interested in
         // https://docs.github.com/en/webhooks/webhook-events-and-payloads#push
 
-        // for manual requests you can type http://localhost:8080/?r=https://github.com/Juliapp123/test.git&b=Fail
-
-        String userAgent = request.getHeader("user-agent");
-
-        if (userAgent.contains("GitHub-Hookshot")) {
-            buildCi(request, response);
-        } else {
-            showWebinterface(target, response);
+        try {
+            String userAgent = request.getHeader("user-agent");
+            if (userAgent.contains("GitHub-Hookshot")) {
+                buildCi(request, response);
+            } else {
+                showWebinterface(target, response);
+            }
+        } catch (Throwable t) {
+            // we do not want to crash it
+            try {
+                t.printStackTrace(response.getWriter());
+            } catch (IOException _) {
+            }
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
     }
 
     void buildCi(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        
         JSONObject payload = readWebhook(request);
-        String repository = payload.getJSONObject("repository").getString("clone_url"); //get cloneable repo URL
+        JSONObject repositoryPayload = payload.getJSONObject("repository");
+        String repository = repositoryPayload.getString("clone_url"); //get cloneable repo URL
 
-        String repoRef[] = payload.getString("ref").split("/"); 
-        String branch = repoRef[repoRef.length-1]; //get name of branch
+        String[] repoRef = payload.getString("ref").split("/");
+        String branchName = repoRef[repoRef.length - 1]; //get name of branch
         String commitId = payload.getJSONObject("head_commit").getString("id"); // get sha ID
-        String ownerName = payload.getJSONObject("repository").getJSONObject("owner").getString("name");
-        String repoName = payload.getJSONObject("repository").getString("name");
+        String ownerName = repositoryPayload.getJSONObject("owner").getString("name");
+        String repoName = repositoryPayload.getString("name");
         Writer log = new StringWriter();
 
+        // set the status of the repo to pending
+        sendResponse(commitId, ownerName, repoName, Filesystem.BuildStatus.PENDING);
 
-        Filesystem.BuildStatus status = ci.runContinuousIntegration(log, repository, branch, commitId, ownerName, repoName, fileSystem);
-        response.getWriter().write(log.toString().replace("\n", "<br>")); // nice formatting
+        Filesystem.BuildStatus status = ci.runContinuousIntegration(log, repository, ownerName, repoName, branchName, commitId, fileSystem);
+
+        // send response to the webhook
+        response.getWriter().write(log.toString());
         switch (status) {
             case SUCCESS, FAILED_TO_COMPILE, FAILED_TO_TEST -> response.setStatus(HttpServletResponse.SC_OK);
             case FAILED_SETUP -> response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            case PENDING -> throw new RuntimeException("Unreachable");
         }
 
-        sendResponse(repository, branch, commitId, ownerName, repoName, status);
+        // set the status of the repo to the build status
+        sendResponse(commitId, ownerName, repoName, status);
     }
 
     void showWebinterface(String target, HttpServletResponse response) throws IOException {
@@ -86,6 +100,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
                     builds.add((Filesystem.BuildData) obj);
                 }
             }
+            builds.sort(Comparator.comparingLong(t -> t.time));
 
             StringBuilder buildText = new StringBuilder();
 
@@ -95,6 +110,7 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             for (Filesystem.BuildData build : builds) {
                 String statusText = switch (build.status) {
                     case SUCCESS -> "Build successful";
+                    case PENDING -> "Build in progress";
                     case FAILED_SETUP -> "Unable to complete job";
                     case FAILED_TO_COMPILE -> "Failed to compile";
                     case FAILED_TO_TEST -> "Failed tests";
@@ -126,22 +142,18 @@ public class ContinuousIntegrationServer extends AbstractHandler {
     }
 
     /**
-     * Reads the payload of a HTTP message
-     * 
-     * @param req   The HTTP message to read
-     * @return  The payload of the HTTP message as a JSonObject if
-     *          payload can be read, otherwise null
+     * Reads the payload of an HTTP message
+     *
+     * @param req The HTTP message to read
+     * @return The payload of the HTTP message as a JSonObject if
+     * payload can be read, otherwise null
      */
-    static JSONObject readWebhook(HttpServletRequest req){
+    static JSONObject readWebhook(HttpServletRequest req) throws IOException {
         StringBuilder builder = new StringBuilder();
         String line;
 
-        try{
-            while ((line = req.getReader().readLine()) != null) {
-                builder.append(line);
-            }
-        }catch(IOException e){
-            return null;
+        while ((line = req.getReader().readLine()) != null) {
+            builder.append(line);
         }
 
         String text = builder.toString();
@@ -149,35 +161,36 @@ public class ContinuousIntegrationServer extends AbstractHandler {
     }
 
     static void sendResponse(
-            String repository,
-            String branch,
             String commitId,
             String ownerName,
             String repoName,
             Filesystem.BuildStatus status
-    ){
+    ) {
         // Convert CI status to GitHub API state
         String state;
-        String description;
-        switch (status) {
-            case SUCCESS:
+        String description = switch (status) {
+            case SUCCESS -> {
                 state = "success";
-                description = "Build succeeded!";
-                break;
-            case FAILED_TO_COMPILE:
+                yield "Build succeeded!";
+            }
+            case FAILED_TO_COMPILE -> {
                 state = "failure";
-                description = "Compilation failed!";
-                break;
-            case FAILED_TO_TEST:
+                yield "Compilation failed!";
+            }
+            case FAILED_TO_TEST -> {
                 state = "failure";
-                description = "Tests failed!";
-                break;
-            default:
+                yield "Tests failed!";
+            }
+            case PENDING -> {
+                state = "pending";
+                yield "Building in progress!";
+            }
+            default -> {
                 state = "error";
-                description = "CI setup failed!";
-                break;
-        }
-
+                yield "CI setup failed!";
+            }
+        };
+        // https://docs.github.com/en/rest/commits/statuses?apiVersion=2022-11-28#create-a-commit-status
         String apiUrl = String.format("https://api.github.com/repos/%s/%s/statuses/%s", ownerName, repoName, commitId);
 
         // Construct JSON response
@@ -194,8 +207,11 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             connection.setDoOutput(true); // Enable sending request body
 
             String githubToken = System.getenv("GITHUB_TOKEN");
-            connection.setRequestProperty("Authorization", "token " + githubToken);
-            
+            if (githubToken == null || githubToken.isBlank()) {
+                throw new IOException("No environment variable GITHUB_TOKEN found");
+            }
+            connection.setRequestProperty("Authorization", "Bearer " + githubToken);
+
             // Write JSON data to the request body
             try (OutputStream os = connection.getOutputStream()) {
                 byte[] input = jsonResponse.toString().getBytes(StandardCharsets.UTF_8);
