@@ -3,12 +3,17 @@ package se.kth;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
+import java.net.HttpURLConnection;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.handler.AbstractHandler;
+import org.json.JSONObject;
+
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Skeleton of a ContinuousIntegrationServer which acts as webhook
@@ -31,7 +36,10 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         // https://docs.github.com/en/webhooks/webhook-events-and-payloads#push
 
         // for manual requests you can type http://localhost:8080/?r=https://github.com/Juliapp123/test.git&b=Fail
-        if (request.getQueryString() != null) {
+
+        String userAgent = request.getHeader("user-agent");
+
+        if (userAgent.contains("GitHub-Hookshot")) {
             buildCi(request, response);
         } else {
             showWebinterface(target, response);
@@ -39,30 +47,26 @@ public class ContinuousIntegrationServer extends AbstractHandler {
     }
 
     void buildCi(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        // TODO not hardcode by for example using .repository in webhook push json
-        String repository = "https://github.com/Juliapp123/test.git";
-        String branch = "Main";
-        for (String split : request.getQueryString().split("&")) {
-            String[] ab = split.split("=");
-            if (ab.length < 2) {
-                continue;
-            }
-            if (ab[0].equalsIgnoreCase("r")) {
-                repository = ab[1];
-            }
-            if (ab[0].equalsIgnoreCase("b")) {
-                branch = ab[1];
-            }
-        }
+        
+        JSONObject payload = readWebhook(request);
+        String repository = payload.getJSONObject("repository").getString("clone_url"); //get cloneable repo URL
 
+        String repoRef[] = payload.getString("ref").split("/"); 
+        String branch = repoRef[repoRef.length-1]; //get name of branch
+        String commitId = payload.getJSONObject("head_commit").getString("id"); // get sha ID
+        String ownerName = payload.getJSONObject("repository").getJSONObject("owner").getString("name");
+        String repoName = payload.getJSONObject("repository").getString("name");
         Writer log = new StringWriter();
 
-        Filesystem.BuildStatus status = ci.runContinuousIntegration(log, repository, branch, fileSystem);
+
+        Filesystem.BuildStatus status = ci.runContinuousIntegration(log, repository, branch, commitId, ownerName, repoName, fileSystem);
         response.getWriter().write(log.toString().replace("\n", "<br>")); // nice formatting
         switch (status) {
             case SUCCESS, FAILED_TO_COMPILE, FAILED_TO_TEST -> response.setStatus(HttpServletResponse.SC_OK);
             case FAILED_SETUP -> response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
+
+        sendResponse(repository, branch, commitId, ownerName, repoName, status);
     }
 
     void showWebinterface(String target, HttpServletResponse response) throws IOException {
@@ -118,6 +122,93 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         } else {
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
             response.getWriter().write("Internal server error");
+        }
+    }
+
+    /**
+     * Reads the payload of a HTTP message
+     * 
+     * @param req   The HTTP message to read
+     * @return  The payload of the HTTP message as a JSonObject if
+     *          payload can be read, otherwise null
+     */
+    static JSONObject readWebhook(HttpServletRequest req){
+        StringBuilder builder = new StringBuilder();
+        String line;
+
+        try{
+            while ((line = req.getReader().readLine()) != null) {
+                builder.append(line);
+            }
+        }catch(IOException e){
+            return null;
+        }
+
+        String text = builder.toString();
+        return new JSONObject(text);
+    }
+
+    static void sendResponse(
+            String repository,
+            String branch,
+            String commitId,
+            String ownerName,
+            String repoName,
+            Filesystem.BuildStatus status
+    ){
+        // Convert CI status to GitHub API state
+        String state;
+        String description;
+        switch (status) {
+            case SUCCESS:
+                state = "success";
+                description = "Build succeeded!";
+                break;
+            case FAILED_TO_COMPILE:
+                state = "failure";
+                description = "Compilation failed!";
+                break;
+            case FAILED_TO_TEST:
+                state = "failure";
+                description = "Tests failed!";
+                break;
+            default:
+                state = "error";
+                description = "CI setup failed!";
+                break;
+        }
+
+        String apiUrl = String.format("https://api.github.com/repos/%s/%s/statuses/%s", ownerName, repoName, commitId);
+
+        // Construct JSON response
+        JSONObject jsonResponse = new JSONObject();
+
+        jsonResponse.put("state", state);
+        jsonResponse.put("description", description);
+
+        try {
+            // Send commit status update to GitHub
+            HttpURLConnection connection = (HttpURLConnection) new URL(apiUrl).openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true); // Enable sending request body
+
+            String githubToken = System.getenv("GITHUB_TOKEN");
+            connection.setRequestProperty("Authorization", "token " + githubToken);
+            
+            // Write JSON data to the request body
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = jsonResponse.toString().getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+
+            // Check GitHub API response
+            int responseCode = connection.getResponseCode();
+            if (responseCode != 201) { // 201 = Created (Success)
+                throw new IOException("Failed to update status on GitHub, Response Code: " + responseCode);
+            }
+        } catch (IOException e) {
+            e.printStackTrace(); // Log errors
         }
     }
 }
