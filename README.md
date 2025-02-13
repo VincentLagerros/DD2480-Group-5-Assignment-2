@@ -28,15 +28,22 @@ You can then try it out at http://localhost:8080/ after running for an interacti
 # Implementation of the compilation of the remote repo
 Uses ProcessBuilder() to run commands in the remote repo (mvn compile), this means that it relies on system programs instead of libraries. Crerated a method startProcess() that handels this.
 
+We test this by cloning a valid and an invalid repository and confirming that cloneRepository() either throws an error or not.  
 
-# Implementation of test of the remote repo 
+
+
+# Implementation of test of the remote repo and test
 Uses ProcessBuilder() to run commands in the remote repo (mvn clean test). this means that it relies on system programs instead of libraries. Crerated a method startProcess() that handels this.
+
+We test this by cloning a valid and an invalid repository and confirming the boolean result from the testProject() method. 
 
 
 # Implementation of notifications to the remote repo 
 1. Set status of the response depending on the boolean answer from cloning, compiling, and testing the remote repository.
 2. Format the API URL with information from the webhook.
 3. Send POST with all information to GitHub API to set the commit status.
+
+We test this by sending valid and invalid github information, such as SHA (commitId), repo, ownerName. If valid the sendResponse() true, otherwise false.  
 
 
 # Contributions
