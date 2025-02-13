@@ -8,6 +8,9 @@
 4. ommons-io
 5. json
 
+# Documentation
+Find the full documentation in api-docs/index.html
+
 
 # How to use the server
 1. Install ngrok via https://ngrok.com/downloads
