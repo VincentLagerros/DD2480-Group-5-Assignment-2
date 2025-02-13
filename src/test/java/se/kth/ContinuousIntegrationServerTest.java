@@ -26,6 +26,11 @@ public class ContinuousIntegrationServerTest {
     }
 
     @Test
+    public void cloneInvalidRepoTest(){
+        assertThrows(Exception.class, () -> ContinuousIntegration.cloneRepository(log, "https://github.com/Juliapp123/test.git", "nonExisting", ".serverbuild"));
+    }
+
+    @Test
     public void compileInvalidRepoTest(){
         try{
         FileUtils.deleteDirectory(new File(".serverbuild"));
