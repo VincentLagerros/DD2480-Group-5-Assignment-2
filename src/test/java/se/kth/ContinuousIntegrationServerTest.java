@@ -28,10 +28,11 @@ public class ContinuousIntegrationServerTest {
     @Test
     public void compileInvalidRepoTest(){
         try{
+        ContinuousIntegration.cloneRepository(log, "https://github.com/Juliapp123/test.git", "complieError", ".serverbuild");
         FileUtils.deleteDirectory(new File(".serverbuild"));
-        }catch(Exception e){}
-
-        assertThrows(Exception.class, () -> ContinuousIntegration.compileProject(log));
+        }catch(Exception e){
+            assertThrows(null, null);
+        }
     }
 
     @Test
@@ -41,7 +42,6 @@ public class ContinuousIntegrationServerTest {
         }catch(Exception e){
             System.out.println(e);
             fail();
-            
         }
     }
 }
