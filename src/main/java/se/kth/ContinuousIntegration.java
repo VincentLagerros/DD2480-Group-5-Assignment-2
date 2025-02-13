@@ -22,7 +22,7 @@ public class ContinuousIntegration {
      * @param log The logger
      * @return The commit hash of the head of the project
      */
-    String getCommitId(Writer log) throws ProcessException, IOException, InterruptedException {
+    public String getCommitId(Writer log) throws ProcessException, IOException, InterruptedException {
         String commitId = startProcess("in git rev-parse", buildDirectory, "git", "rev-parse", "HEAD").trim();
         log.append("Commit = ").append(commitId);
         return commitId;
@@ -32,7 +32,7 @@ public class ContinuousIntegration {
      * @param log The logger
      * @return If the project can be compiled
      */
-    boolean compileProject(Writer log) throws IOException, InterruptedException {
+    public boolean compileProject(Writer log) throws IOException, InterruptedException {
         log.append("\n==== Starting mvn compile ====\n");
         try {
             log.append(startProcess("in compilation", buildDirectory, mvn, "compile"));
@@ -46,7 +46,7 @@ public class ContinuousIntegration {
      * @param log The logger
      * @return If the test was successful
      */
-    boolean testProject(Writer log) throws IOException, InterruptedException {
+    public boolean testProject(Writer log) throws IOException, InterruptedException {
         log.append("\n==== Running tests ====\n");
         try {
             log.append(startProcess("tests could not start", buildDirectory, mvn, "test"));
@@ -65,7 +65,7 @@ public class ContinuousIntegration {
      * @param branchName     the specified repository branch url
      * @return status
      */
-    Filesystem.BuildStatus runContinuousIntegration(
+    public Filesystem.BuildStatus runContinuousIntegration(
             Writer log,
             String repository,
             String ownerName,
@@ -110,7 +110,7 @@ public class ContinuousIntegration {
      * @param branch    The branch of the git repo, e.g. Main
      * @param directory The output folder directory, e.g. build
      */
-    static void cloneRepository(
+    public static void cloneRepository(
             Writer log,
             String url,
             String branch,
@@ -138,7 +138,7 @@ public class ContinuousIntegration {
      * @param directory    Specified directory where the system command runs
      * @return returns the stdout log
      */
-    static String startProcess(String errorMessage, String directory, String... cmd) throws InterruptedException, IOException, ProcessException {
+    public static String startProcess(String errorMessage, String directory, String... cmd) throws InterruptedException, IOException, ProcessException {
         // spawn the process for compiling and wait
         ProcessBuilder builder = new ProcessBuilder(cmd);
         if (directory != null) {

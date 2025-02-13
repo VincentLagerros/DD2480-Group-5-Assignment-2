@@ -30,7 +30,7 @@ public class Filesystem {
     /**
      * .log files, used to store the build log
      */
-    static class LogData {
+    public static class LogData {
         String log;
         File file;
 
@@ -63,7 +63,7 @@ public class Filesystem {
     /**
      * .json files, used to store the metadata about each build
      */
-    static class BuildData {
+    public static class BuildData {
         BuildStatus status;
         String commit;
         Long time;
@@ -102,7 +102,7 @@ public class Filesystem {
     /**
      * Save the current metadata to storage
      */
-    void saveToFile(
+    public void saveToFile(
             String ownerName,
             String repoName,
             String branchName,
@@ -127,7 +127,7 @@ public class Filesystem {
      * @param file Input file path
      * @return A virtual file path without the outputDirectory prefix
      */
-    String sanitizeFilepath(File file) {
+    public String sanitizeFilepath(File file) {
         Path root = new File(outputDirectory).toPath();
         Path path = file.toPath();
         assert path.startsWith(root);
@@ -141,7 +141,7 @@ public class Filesystem {
      * @return If the file is a Log, then returns a LogData, otherwise returns an Array of type BuildData or File, where
      * BuildData is a single build and File is a Directory.
      */
-    Object getDirectory(String target) throws IOException {
+    public Object getDirectory(String target) throws IOException {
         File root = new File(outputDirectory);
         for (String subdirectory : target.split("/")) {
             root = new File(root, subdirectory);
@@ -173,7 +173,7 @@ public class Filesystem {
      * @param file The input file that should be read
      * @return The content of the file
      */
-    static String readFileToEnd(File file) throws IOException {
+    public static String readFileToEnd(File file) throws IOException {
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             StringBuilder sb = new StringBuilder();
             String line = reader.readLine();
