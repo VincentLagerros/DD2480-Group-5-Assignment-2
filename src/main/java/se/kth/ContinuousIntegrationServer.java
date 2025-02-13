@@ -25,6 +25,10 @@ public class ContinuousIntegrationServer extends AbstractHandler {
     ContinuousIntegration ci = new ContinuousIntegration(".serverbuild");
     Filesystem fileSystem = new Filesystem(".serveroutput");
 
+    /**
+     * Processes incoming HTTP requests, checks if the request originates from GitHub.
+     * If so, triggers the CI. 
+     */
     public void handle(String target,
                        Request baseRequest,
                        HttpServletRequest request,
@@ -54,6 +58,13 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         }
     }
 
+    /**
+     * Retrives data form the GitHub webbhook request, calls on runContinuousIntegration
+     * Which clones, compiles, run tests and returns status. Sends response with status to GitHub.
+     * @param request the webhook request from GitHub
+     * @param response the webhook response to Github
+     * @throws IOException
+     */
     void buildCi(HttpServletRequest request, HttpServletResponse response) throws IOException {
         JSONObject payload = readWebhook(request);
         JSONObject repositoryPayload = payload.getJSONObject("repository");
@@ -83,6 +94,12 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         sendResponse(commitId, ownerName, repoName, status);
     }
 
+    /**
+     * Displays CI logs and statuses in web. Uses HTML templates form Webb.java
+     * @param target the server path to render
+     * @param response where to send the response
+     * @throws IOException
+     */
     void showWebinterface(String target, HttpServletResponse response) throws IOException {
         Object directory = fileSystem.getDirectory(target);
         if (directory instanceof Filesystem.LogData) {
@@ -160,6 +177,15 @@ public class ContinuousIntegrationServer extends AbstractHandler {
         return new JSONObject(text);
     }
 
+    /**
+     * Updates GitHubs commit status via the Github API. Converts CI build status to
+     * GitHub API states. Sends a POST request to the affected GitHub commit.
+     * @param commitId the id of the handled commit
+     * @param ownerName the owner of the repository
+     * @param repoName the repository name
+     * @param status the status of the build
+     * @return is successful
+     */
     static boolean sendResponse(
             String commitId,
             String ownerName,
