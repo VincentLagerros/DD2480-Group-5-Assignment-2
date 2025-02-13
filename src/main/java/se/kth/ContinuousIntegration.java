@@ -8,10 +8,10 @@ import java.io.*;
  * This is the main class for running the compiler or cloning the repository.
  */
 public class ContinuousIntegration {
-    static String buildDirectory;
+    String buildDirectory;
 
     ContinuousIntegration(String buildDirectory) {
-        ContinuousIntegration.buildDirectory = buildDirectory;
+        this.buildDirectory = buildDirectory;
     }
 
     // windows is a bit weird sometimes
@@ -32,7 +32,7 @@ public class ContinuousIntegration {
      * @param log The logger
      * @return If the project can be compiled
      */
-    static boolean compileProject(Writer log) throws IOException, InterruptedException {
+    boolean compileProject(Writer log) throws IOException, InterruptedException {
         log.append("\n==== Starting mvn compile ====\n");
         try {
             log.append(startProcess("in compilation", buildDirectory, mvn, "compile"));
@@ -46,7 +46,7 @@ public class ContinuousIntegration {
      * @param log The logger
      * @return If the test was successful
      */
-    static boolean testProject(Writer log) throws IOException, InterruptedException {
+    boolean testProject(Writer log) throws IOException, InterruptedException {
         log.append("\n==== Running tests ====\n");
         try {
             log.append(startProcess("tests could not start", buildDirectory, mvn, "test"));
