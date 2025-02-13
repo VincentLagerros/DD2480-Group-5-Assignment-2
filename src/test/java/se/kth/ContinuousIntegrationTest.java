@@ -11,11 +11,10 @@ import static org.junit.Assert.fail;
 
 import java.io.StringWriter;
 
-import javax.swing.text.TableView.TableRow;
-
 import org.apache.commons.io.FileUtils;
 
-public class ContinuousIntegrationServerTest {
+public class ContinuousIntegrationTest {
+    static ContinuousIntegration ci = new ContinuousIntegration(".serverbuild");
     static Writer log = new StringWriter();
 
     @Before
@@ -43,7 +42,7 @@ public class ContinuousIntegrationServerTest {
     @Test
     public void compileRepoTest(){
         try{
-            assertTrue(ContinuousIntegration.compileProject(log));
+            assertTrue(ci.compileProject(log));
         }catch(Exception e){
             System.out.println(e);
             fail();
