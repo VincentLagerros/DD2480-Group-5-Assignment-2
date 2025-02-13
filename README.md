@@ -17,7 +17,6 @@
 5. Generate a new GITHUB_TOKEN in https://github.com/settings/tokens/new and check `repo:status`
 6. Run with your preferred IDE with the environment variable GITHUB_TOKEN set
 
-
 You can then try it out at http://localhost:8080/ after running for an interactive web user interface.
 
 
@@ -38,8 +37,6 @@ Uses ProcessBuilder() to run commands in the remote repo (mvn clean test). this 
 1. Set status of the response depending on the boolean answer from cloning, compiling, and testing the remote repository.
 2. Format the API URL with information from the webhook.
 3. Send POST with all information to GitHub API to set the commit status.
-
-
 
 
 # Contributions

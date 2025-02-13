@@ -184,8 +184,9 @@ public class ContinuousIntegrationServer extends AbstractHandler {
      * @param ownerName the owner of the repository
      * @param repoName the repository name
      * @param status the status of the build
+     * @return is successful
      */
-    static void sendResponse(
+    static boolean sendResponse(
             String commitId,
             String ownerName,
             String repoName,
@@ -248,8 +249,11 @@ public class ContinuousIntegrationServer extends AbstractHandler {
             if (responseCode != 201) { // 201 = Created (Success)
                 throw new IOException("Failed to update status on GitHub, Response Code: " + responseCode);
             }
+            return true;
         } catch (IOException e) {
             e.printStackTrace(); // Log errors
+            return false;
         }
     }
 }
+
